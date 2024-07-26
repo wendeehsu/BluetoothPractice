@@ -47,33 +47,6 @@ class MainActivity : ComponentActivity() {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private val TAG = "WENDEE TEST"
 
-    @RequiresApi(Build.VERSION_CODES.M)
-    private var bluetoothEnableResultLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-
-            when (result.resultCode) {
-                Activity.RESULT_OK -> {
-                    val bluetoothManager: BluetoothManager = getSystemService(BluetoothManager::class.java)
-                    bluetoothAdapter = bluetoothManager.getAdapter()
-                }
-                Activity.RESULT_CANCELED -> {
-                    // oh no :(
-                }
-            }
-        }
-
-    @RequiresApi(Build.VERSION_CODES.M)
-    private val requestBluetoothPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted: Boolean ->
-            if (isGranted) {
-                bluetoothEnableResultLauncher.launch(enableBluetoothIntent)
-            } else {
-                // some sort of retry
-            }
-        }
-
 
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -90,83 +63,28 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
-        // bluetooth set up
-        setupViews()
-        checkBluetoothEnabled()
+        showBluetoothDialog()
     }
 
     @RequiresApi(Build.VERSION_CODES.M)
-    private fun setupViews() {
-        Log.d(TAG, "setupViews")
-        // rerun the permissions check logic if it was already denied
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            requestBluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            requestBluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH)
-        }
-    }
-
-    @RequiresApi(Build.VERSION_CODES.M)
-    private fun checkBluetoothEnabled() {
-        Log.d(TAG, "checkBluetoothEnabled")
-        // bluetooth set up
+    private fun showBluetoothDialog() {
         val bluetoothManager: BluetoothManager = getSystemService(BluetoothManager::class.java)
-        val bluetoothAdapter: BluetoothAdapter = bluetoothManager.getAdapter()
-
-        // displays message if the device doesn't support bluetooth
-        if (bluetoothAdapter == null) {
-            Toast.makeText(
-                this,
-                "Your device does not support bluetooth. This may lead to limited functionality of this application",
-                Toast.LENGTH_SHORT
-            ).show()
-        }
-
-        // check to see if user grants permission to bluetooth
-        val registerForResult = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
-                val intent = result.data
-
-            }
-            Log.d(TAG, result.toString())
-
-        }
-
+        bluetoothAdapter = bluetoothManager.getAdapter()
 
         // activate bluetooth permission
         if (bluetoothAdapter?.isEnabled == false) {
-
-            if (ActivityCompat.checkSelfPermission(
-                    this,
-                    android.Manifest.permission.BLUETOOTH_CONNECT
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                /**
-                 * We DON'T have Bluetooth permissions. We have to get them before we can ask the
-                 *  user to enable Bluetooth
-                 */
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    if (shouldShowRequestPermissionRationale(android.Manifest.permission.BLUETOOTH_CONNECT)) {
-                        //put toast about why need bluetooth
-                    }
-
-                } else {
-                    requestBluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
-                }
-            } else {
-                if (shouldShowRequestPermissionRationale(android.Manifest.permission.BLUETOOTH)) {
-                    //put toast about why need bluetooth
-                } else {
-                    requestBluetoothPermissionLauncher.launch(android.Manifest.permission.BLUETOOTH)
-                }
-            }
-
+            startBluetoothIntentForResult.launch(enableBluetoothIntent)
         }
     }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    private val startBluetoothIntentForResult =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            result ->
+                if (result.resultCode != Activity.RESULT_OK) {
+                    showBluetoothDialog()
+                }
+        }
 }
 
 
