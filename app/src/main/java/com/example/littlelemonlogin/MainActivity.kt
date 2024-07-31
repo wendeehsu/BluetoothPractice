@@ -45,20 +45,20 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.example.littlelemonlogin.ui.theme.LittleLemonLoginTheme
 import android.Manifest
+import android.bluetooth.le.ScanFilter
+import android.bluetooth.le.ScanSettings
 
 
 class MainActivity : ComponentActivity() {
 
-    private val enableBluetoothIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
     private var bluetoothAdapter: BluetoothAdapter? = null
-    private val BLUETOOTH_REQUEST_CODE = 1
     private val TAG = "WENDEE TEST"
 
     // Stops scanning after 10 seconds.
     private val SCAN_PERIOD: Long = 10000
     private var scanning = false
 
-    @RequiresApi(Build.VERSION_CODES.M)
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -75,7 +75,6 @@ class MainActivity : ComponentActivity() {
         }
         requestBTPermission()
         checkAndEnableBluetooth()
-        // Scan
     }
 
     private fun isPermissionGranted(permissionToCheck: String): Boolean {
@@ -90,7 +89,7 @@ class MainActivity : ComponentActivity() {
 
         if (!isPermissionGranted(Manifest.permission.BLUETOOTH_SCAN) ||
             !isPermissionGranted(Manifest.permission.BLUETOOTH_ADVERTISE) ||
-            !isPermissionGranted(Manifest.permission.BLUETOOTH_CONNECT)) {
+            !isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)) {
             requestBluetoothPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.BLUETOOTH_SCAN,
@@ -114,40 +113,49 @@ class MainActivity : ComponentActivity() {
                 }
         }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun checkAndEnableBluetooth() {
         if (bluetoothAdapter?.isEnabled == false) {
             startBluetoothIntentForResult.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
         } else {
             // start scanning
+            Log.d(TAG, "checkAndEnableBluetooth")
+            scanDevice()
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private val startBluetoothIntentForResult =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             result ->
                 if (result.resultCode != Activity.RESULT_OK) {
                     // Uncomment the following line to force turn on
                     // checkAndEnableBluetooth()
+
+                } else {
+                    // start scanning
+                    Log.d(TAG, "startBluetoothIntentForResult")
+                    scanDevice()
                 }
-            Log.d(TAG, "result -> ${result.resultCode}")
         }
 
-    @RequiresApi(Build.VERSION_CODES.M)
+    @RequiresApi(Build.VERSION_CODES.O)
     @SuppressLint("MissingPermission")
-    private fun scanLeDevice() {
-        val bluetoothManager: BluetoothManager = getSystemService(BluetoothManager::class.java)
-        bluetoothAdapter = bluetoothManager.adapter
+    private fun scanDevice() {
         val bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
+        val filters = mutableListOf(ScanFilter.Builder().build())
+        val scanSettings =
+            ScanSettings.Builder().setLegacy(false).setScanMode(ScanSettings.SCAN_MODE_BALANCED).build()
 
-        if (!scanning) { // Stops scanning after a pre-defined scan period.
+        if (!scanning) {
+            // Stops scanning after a pre-defined scan period.
             Handler(Looper.getMainLooper()).postDelayed({
                 scanning = false
                 bluetoothLeScanner?.stopScan(leScanCallback)
             }, SCAN_PERIOD)
             scanning = true
+            Log.d(TAG, "start scanning")
             bluetoothLeScanner?.startScan(leScanCallback)
-
-//            bluetoothLeScanner.startScan(leScanCallback, ScanSettings.Builder().setLegacy(false).build())
         } else {
             scanning = false
             bluetoothLeScanner?.stopScan(leScanCallback)
@@ -158,8 +166,10 @@ class MainActivity : ComponentActivity() {
     // Device scan callback.
     private val leScanCallback: ScanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
+            Log.d(TAG, "in leScanCallback")
             super.onScanResult(callbackType, result)
-            Log.d(TAG, "result: $result / device: ${result.device}")
+            Log.d(TAG, "device: ${result.device}")
+
 //            leDeviceListAdapter.addDevice(result.device)
 //            leDeviceListAdapter.notifyDataSetChanged()
         }
