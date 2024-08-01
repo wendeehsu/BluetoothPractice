@@ -1,17 +1,24 @@
 package com.example.littlelemonlogin
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,22 +48,20 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.example.littlelemonlogin.ui.theme.LittleLemonLoginTheme
-import android.Manifest
-import android.bluetooth.le.ScanFilter
-import android.bluetooth.le.ScanSettings
 
 
 class MainActivity : ComponentActivity() {
 
     private var bluetoothAdapter: BluetoothAdapter? = null
+    private val MY_MAC_ADDRESS = "FC:91:5D:64:FE:5F"
     private val TAG = "WENDEE TEST"
 
     // Stops scanning after 10 seconds.
     private val SCAN_PERIOD: Long = 10000
     private var scanning = false
+    private var isGattConnected = false
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -89,7 +94,8 @@ class MainActivity : ComponentActivity() {
 
         if (!isPermissionGranted(Manifest.permission.BLUETOOTH_SCAN) ||
             !isPermissionGranted(Manifest.permission.BLUETOOTH_ADVERTISE) ||
-            !isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION)) {
+            !isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION) ||
+            !isPermissionGranted(Manifest.permission.BLUETOOTH_CONNECT)) {
             requestBluetoothPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.BLUETOOTH_SCAN,
@@ -144,8 +150,10 @@ class MainActivity : ComponentActivity() {
     private fun scanDevice() {
         val bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
         val filters = mutableListOf(ScanFilter.Builder().build())
-        val scanSettings =
-            ScanSettings.Builder().setLegacy(false).setScanMode(ScanSettings.SCAN_MODE_BALANCED).build()
+        val scanSettings = ScanSettings.Builder()
+                            .setLegacy(false)
+                            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
+                            .build()
 
         if (!scanning) {
             // Stops scanning after a pre-defined scan period.
@@ -162,21 +170,51 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-//    private val leDeviceListAdapter = LeDeviceListAdapter()
     // Device scan callback.
     private val leScanCallback: ScanCallback = object : ScanCallback() {
+        @RequiresApi(Build.VERSION_CODES.M)
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            Log.d(TAG, "in leScanCallback")
             super.onScanResult(callbackType, result)
-            Log.d(TAG, "device: ${result.device}")
-
-//            leDeviceListAdapter.addDevice(result.device)
-//            leDeviceListAdapter.notifyDataSetChanged()
+            if (isGattConnected) return
+            Log.d(TAG, "scanning -> $scanning device -> ${result.device}")
+            if (result.device.toString() == MY_MAC_ADDRESS) {
+                connectGattServer(result.device) ?: return
+                isGattConnected = true
+                stopAllScanning()
+            }
         }
     }
+
+    /* Connect to a GATT server on [device] */
+    @RequiresApi(Build.VERSION_CODES.M)
+    private fun connectGattServer(device: BluetoothDevice): BluetoothGatt ? {
+        val callback = object : BluetoothGattCallback() {}
+        if (ActivityCompat.checkSelfPermission(
+                this@MainActivity,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "No permission when trying to connect the gatt server.")
+            return null
+        }
+        return device.connectGatt(this@MainActivity, false, callback, BluetoothDevice.TRANSPORT_LE)
+    }
+
+    private fun stopAllScanning() {
+        val bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
+        val localCallback = object : ScanCallback() {}
+        if (ActivityCompat.checkSelfPermission(
+                this@MainActivity,
+                Manifest.permission.BLUETOOTH_SCAN
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            bluetoothLeScanner?.stopScan(localCallback)
+        } else {
+            Log.e(TAG, "No permission when trying to stop scanning.")
+        }
+
+    }
 }
-
-
 
 @Composable
 fun LoginScreen(){
