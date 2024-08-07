@@ -8,18 +8,22 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.bluetooth.BluetoothHeadset
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -52,16 +56,25 @@ import androidx.core.app.ActivityCompat
 import com.example.littlelemonlogin.ui.theme.LittleLemonLoginTheme
 
 
+private var bluetoothAdapter: BluetoothAdapter? = null
+private val MY_MAC_ADDRESS = "FC:91:5D:64:FE:5F"
+private val TAG = "WENDEE TEST"
+
+// Stops scanning after 10 seconds.
+private val SCAN_PERIOD: Long = 10000
+private var scanning = false
+private var isGattConnected = false
+
 class MainActivity : ComponentActivity() {
 
-    private var bluetoothAdapter: BluetoothAdapter? = null
-    private val MY_MAC_ADDRESS = "FC:91:5D:64:FE:5F"
-    private val TAG = "WENDEE TEST"
-
-    // Stops scanning after 10 seconds.
-    private val SCAN_PERIOD: Long = 10000
-    private var scanning = false
-    private var isGattConnected = false
+//    private var bluetoothAdapter: BluetoothAdapter? = null
+//    private val MY_MAC_ADDRESS = "FC:91:5D:64:FE:5F"
+//    private val TAG = "WENDEE TEST"
+//
+//    // Stops scanning after 10 seconds.
+//    private val SCAN_PERIOD: Long = 10000
+//    private var scanning = false
+//    private var isGattConnected = false
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -134,6 +147,7 @@ class MainActivity : ComponentActivity() {
     private val startBluetoothIntentForResult =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             result ->
+
                 if (result.resultCode != Activity.RESULT_OK) {
                     // Uncomment the following line to force turn on
                     // checkAndEnableBluetooth()
@@ -142,8 +156,50 @@ class MainActivity : ComponentActivity() {
                     // start scanning
                     Log.d(TAG, "startBluetoothIntentForResult")
                     scanDevice()
-                }
+
+            }
         }
+
+    private val broadcastReceiver = object : BroadcastReceiver() {
+        // onReceive called at ACTION_BOND_STATE_CHANGED
+        override fun onReceive(context: Context, intent: Intent) {
+            val action = intent.action ?: return
+            Log.d(TAG, "intent -> $intent ,action -> $action")
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+            val previousState = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE)
+            val deviceAddress = device.address
+            if (ActivityCompat.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.BLUETOOTH_CONNECT
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
+
+            Log.d(TAG, "address -> $deviceAddress")
+            Log.d(TAG, "bondState -> ${device.bondState}, previous -> $previousState")
+        }
+
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connectBondedDevice(device: BluetoothDevice) {
+        Log.d(TAG, "connectBondedDevice")
+        bluetoothAdapter?.getProfileProxy(this@MainActivity, object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+                Log.d(TAG, "onServiceConnected(profile=$profile, proxy=$proxy)")
+                val connectMethod = BluetoothHeadset::class.java.getDeclaredMethod(
+                    "connect", BluetoothDevice::class.java
+                ).apply { isAccessible = true }
+
+                connectMethod.invoke(proxy, device)
+            }
+
+            override fun onServiceDisconnected(profile: Int) {
+                Log.d(TAG, "onServiceDisconnected(profile=$profile)")
+            }
+        }, BluetoothProfile.HEADSET)
+    }
 
     @RequiresApi(Build.VERSION_CODES.O)
     @SuppressLint("MissingPermission")
@@ -154,6 +210,22 @@ class MainActivity : ComponentActivity() {
                             .setLegacy(false)
                             .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER)
                             .build()
+
+        // Register for broadcasts when a device is discovered.
+        val filter = IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        filter.addAction(BluetoothDevice.ACTION_FOUND)
+        filter.addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+        this.registerReceiver(broadcastReceiver, filter)
+
+        val devices = bluetoothAdapter?.bondedDevices
+        if (devices != null && devices.size > 0) {
+            Log.d(TAG, "devices -> $devices")
+
+            // TODO: something is wrong here
+            connectBondedDevice(devices.first())
+//            connectGattServer(devices.first())
+            return
+        }
 
         if (!scanning) {
             // Stops scanning after a pre-defined scan period.
@@ -176,10 +248,19 @@ class MainActivity : ComponentActivity() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             super.onScanResult(callbackType, result)
             if (isGattConnected) return
-            Log.d(TAG, "scanning -> $scanning device -> ${result.device}")
+            Log.d(TAG, "device -> ${result.device}")
             if (result.device.toString() == MY_MAC_ADDRESS) {
                 connectGattServer(result.device) ?: return
                 isGattConnected = true
+                if (ActivityCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    Log.e(TAG, "No permission to create bond.")
+                    return
+                }
+                result.device.createBond()
                 stopAllScanning()
             }
         }
@@ -188,7 +269,35 @@ class MainActivity : ComponentActivity() {
     /* Connect to a GATT server on [device] */
     @RequiresApi(Build.VERSION_CODES.M)
     private fun connectGattServer(device: BluetoothDevice): BluetoothGatt ? {
-        val callback = object : BluetoothGattCallback() {}
+         val bluetoothGattCallback = object : BluetoothGattCallback() {
+            override fun onConnectionStateChange(gatt: BluetoothGatt?, status: Int, newState: Int) {
+                if (ActivityCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.BLUETOOTH_CONNECT
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    return
+                }
+
+                if (status != BluetoothGatt.GATT_SUCCESS) {
+                    Log.e(TAG, "GATT failed.")
+                    gatt?.close()
+                }
+
+                // Handle cases for BluetoothGatt.GATT_SUCCESS
+                if (newState == BluetoothProfile.STATE_CONNECTED) {
+                    // successfully connected to the GATT Server
+                    Log.d(TAG, "GATT STATE_CONNECTED $status new -> $newState bondStatus -> ${device.bondState}")
+                    // gatt?.discoverServices()
+                } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                    // disconnected from the GATT Server
+                    gatt?.close()
+                    Log.d(TAG, "GATT STATE_DISCONNECTED $status new -> $newState")
+                }
+                Log.d(TAG, "gatt callback $status new -> $newState bondStatus -> ${device.bondState}")
+            }
+        }
+
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity,
                 Manifest.permission.BLUETOOTH_CONNECT
@@ -197,12 +306,18 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "No permission when trying to connect the gatt server.")
             return null
         }
-        return device.connectGatt(this@MainActivity, false, callback, BluetoothDevice.TRANSPORT_LE)
+        Log.d(TAG, "device $device ready to connect")
+        return device.connectGatt(this@MainActivity, false, bluetoothGattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     private fun stopAllScanning() {
         val bluetoothLeScanner = bluetoothAdapter?.bluetoothLeScanner
-        val localCallback = object : ScanCallback() {}
+        val localCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                super.onScanResult(callbackType, result)
+                Log.d(TAG, "Stop scan from callback.")
+            }
+        }
         if (ActivityCompat.checkSelfPermission(
                 this@MainActivity,
                 Manifest.permission.BLUETOOTH_SCAN
@@ -212,8 +327,14 @@ class MainActivity : ComponentActivity() {
         } else {
             Log.e(TAG, "No permission when trying to stop scanning.")
         }
-
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "destroyed!!")
+        unregisterReceiver(broadcastReceiver)
+    }
+
 }
 
 @Composable
@@ -251,11 +372,7 @@ fun LoginScreen(){
         )
         Button(
             onClick = {
-                      if (username == "Darian" && password == "littlelemon") {
-                          Toast.makeText(context, "Welcome", Toast.LENGTH_SHORT).show()
-                      } else {
-                          Toast.makeText(context, "Ooooops", Toast.LENGTH_SHORT).show()
-                      }
+                      // ScanDevice()
             },
             colors = ButtonDefaults.buttonColors(
                 Color(0xFF495E57),
