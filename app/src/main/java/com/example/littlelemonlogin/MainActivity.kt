@@ -3,6 +3,7 @@ package com.example.littlelemonlogin
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
@@ -182,23 +183,27 @@ class MainActivity : ComponentActivity() {
 
     }
 
+    @RequiresApi(Build.VERSION_CODES.M)
     @SuppressLint("MissingPermission")
     private fun connectBondedDevice(device: BluetoothDevice) {
         Log.d(TAG, "connectBondedDevice")
-        bluetoothAdapter?.getProfileProxy(this@MainActivity, object : BluetoothProfile.ServiceListener {
-            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                Log.d(TAG, "onServiceConnected(profile=$profile, proxy=$proxy)")
-                val connectMethod = BluetoothHeadset::class.java.getDeclaredMethod(
-                    "connect", BluetoothDevice::class.java
-                ).apply { isAccessible = true }
-
-                connectMethod.invoke(proxy, device)
-            }
-
-            override fun onServiceDisconnected(profile: Int) {
-                Log.d(TAG, "onServiceDisconnected(profile=$profile)")
-            }
-        }, BluetoothProfile.HEADSET)
+        if (device.bondState == BluetoothDevice.BOND_BONDED) {
+            connectGattServer(device)
+        }
+//        bluetoothAdapter?.getProfileProxy(this@MainActivity, object : BluetoothProfile.ServiceListener {
+//            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
+//                Log.d(TAG, "onServiceConnected(profile=$profile, proxy=$proxy)")
+//                val connectMethod = BluetoothA2dp::class.java.getDeclaredMethod(
+//                    "connect", BluetoothDevice::class.java
+//                ).apply { isAccessible = true }
+//
+//                connectMethod.invoke(proxy, device)
+//            }
+//
+//            override fun onServiceDisconnected(profile: Int) {
+//                Log.d(TAG, "onServiceDisconnected(profile=$profile)")
+//            }
+//        }, BluetoothProfile.A2DP)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
