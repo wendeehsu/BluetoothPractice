@@ -24,38 +24,40 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 
-class Bluetooth : ComponentActivity() {
+class Bluetooth(private val context: Context) {
     private var bluetoothAdapter: BluetoothAdapter? = null
     private val MY_MAC_ADDRESS = "FC:91:5D:64:FE:5F"
     private val TAG = "WENDEE TEST"
-    private lateinit var context : Context
+    private var pairedDevice : BluetoothDevice? = null
 
     // Stops scanning after 10 seconds.
     private val SCAN_PERIOD: Long = 30000
     private var scanning = false
     private var isGattConnected = false
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-    }
-
-    override fun onDestroy() {
-        unregisterReceiver(broadcastReceiver)
-        super.onDestroy()
-    }
+//    override fun onCreate(savedInstanceState: Bundle?) {
+//        super.onCreate(savedInstanceState)
+//    }
+//
+//    override fun onDestroy() {
+//        unregisterReceiver(broadcastReceiver)
+//        super.onDestroy()
+//    }
 
     private fun isPermissionGranted(permissionToCheck: String): Boolean {
+        Log.d(TAG, "checking permission -> $permissionToCheck | Granted -> ${ActivityCompat.checkSelfPermission(context, permissionToCheck) == PackageManager.PERMISSION_GRANTED}")
         return ActivityCompat.checkSelfPermission(context, permissionToCheck) ==
                 PackageManager.PERMISSION_GRANTED
     }
 
     /* Request all Bluetooth permissions when the activity starts. */
-    public fun requestBTPermission(_context: Context) {
-        context = _context
+    fun requestBTPermission(requestBluetoothPermissionLauncher: ActivityResultLauncher<Array<String>>) {
+        Log.d(TAG, "in requestBTPermission")
         val bluetoothManager = ActivityCompat.getSystemService(context, BluetoothManager::class.java) ?: return
         bluetoothAdapter = bluetoothManager.adapter ?: return
 
@@ -63,6 +65,8 @@ class Bluetooth : ComponentActivity() {
             !isPermissionGranted(Manifest.permission.BLUETOOTH_ADVERTISE) ||
             !isPermissionGranted(Manifest.permission.ACCESS_FINE_LOCATION) ||
             !isPermissionGranted(Manifest.permission.BLUETOOTH_CONNECT)) {
+
+            Log.d(TAG, "oooooooooooops!")
             requestBluetoothPermissionLauncher.launch(
                 arrayOf(
                     Manifest.permission.BLUETOOTH_SCAN,
@@ -76,40 +80,18 @@ class Bluetooth : ComponentActivity() {
         }
     }
 
-    private val requestBluetoothPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-                permissions ->
-            permissions.forEach { p ->
-                if (p.value == false) {
-                    Log.d(TAG, "$p is not permitted")
-                }
-            }
-        }
+
 
     @RequiresApi(Build.VERSION_CODES.O)
-    public fun checkAndEnableBluetooth() {
+    fun checkAndEnableBluetooth(startBluetoothIntentForResult : ActivityResultLauncher<Intent>) {
         if (bluetoothAdapter?.isEnabled == false) {
             startBluetoothIntentForResult.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
         } else {
             // start scanning
             Log.d(TAG, "checkAndEnableBluetooth")
-            scanDevice()
         }
+        scanDevice()
     }
-
-    @RequiresApi(Build.VERSION_CODES.O)
-    private val startBluetoothIntentForResult =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                result ->
-            if (result.resultCode != Activity.RESULT_OK) {
-                // Uncomment the following line to force turn on
-                // checkAndEnableBluetooth()
-            } else {
-                // start scanning
-                Log.d(TAG, "startBluetoothIntentForResult")
-                scanDevice()
-            }
-        }
 
     private val broadcastReceiver = object : BroadcastReceiver() {
         // onReceive called at ACTION_BOND_STATE_CHANGED
@@ -140,20 +122,6 @@ class Bluetooth : ComponentActivity() {
         if (device.bondState == BluetoothDevice.BOND_BONDED) {
             connectGattServer(device)
         }
-//        bluetoothAdapter?.getProfileProxy(this@MainActivity, object : BluetoothProfile.ServiceListener {
-//            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-//                Log.d(TAG, "onServiceConnected(profile=$profile, proxy=$proxy)")
-//                val connectMethod = BluetoothA2dp::class.java.getDeclaredMethod(
-//                    "connect", BluetoothDevice::class.java
-//                ).apply { isAccessible = true }
-//
-//                connectMethod.invoke(proxy, device)
-//            }
-//
-//            override fun onServiceDisconnected(profile: Int) {
-//                Log.d(TAG, "onServiceDisconnected(profile=$profile)")
-//            }
-//        }, BluetoothProfile.A2DP)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
@@ -243,11 +211,12 @@ class Bluetooth : ComponentActivity() {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     // successfully connected to the GATT Server
                     Log.d(TAG, "GATT STATE_CONNECTED $status new -> $newState bondStatus -> ${device.bondState}")
-                    // gatt?.discoverServices()
+                    pairedDevice = device
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     // disconnected from the GATT Server
                     gatt?.close()
                     Log.d(TAG, "GATT STATE_DISCONNECTED $status new -> $newState")
+                    pairedDevice = null
                 }
                 Log.d(TAG, "gatt callback $status new -> $newState bondStatus -> ${device.bondState}")
             }
@@ -283,5 +252,4 @@ class Bluetooth : ComponentActivity() {
             Log.e(TAG, "No permission when trying to stop scanning.")
         }
     }
-
 }

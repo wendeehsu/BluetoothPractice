@@ -1,10 +1,14 @@
 package com.example.littlelemonlogin
 
+import android.app.Activity
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -17,10 +21,6 @@ import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -30,11 +30,28 @@ import androidx.compose.ui.unit.dp
 import com.example.littlelemonlogin.ui.theme.LittleLemonLoginTheme
 
 class MainActivity : ComponentActivity() {
-    val mBluetooth = Bluetooth()
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val mBluetooth = Bluetooth(this)
+
+        val requestBluetoothPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+                    permissions ->
+                permissions.entries.forEach {
+                    Log.d("TAG", "${it.key} = ${it.value}")
+                }
+            }
+        val startBluetoothIntentForResult = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                result ->
+            if (result.resultCode != Activity.RESULT_OK) {
+                Log.d("TAG", "startBluetoothIntentForResult")
+            } else {
+                // start scanning
+                Log.d("TAG", "startBluetoothIntentForResult")
+            }
+        }
 
         setContent {
             LittleLemonLoginTheme {
@@ -43,12 +60,12 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colors.background
                 ) {
-                    LoginScreen(mBluetooth)
+                    LoginScreen(mBluetooth, startBluetoothIntentForResult)
                 }
             }
         }
-        mBluetooth.requestBTPermission(this)
-//        mBluetooth.checkAndEnableBluetooth()
+
+        mBluetooth.requestBTPermission(requestBluetoothPermissionLauncher)
     }
 
 
@@ -56,22 +73,11 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    fun test () {
-        Log.d("?", "???")
-    }
-
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Composable
-fun LoginScreen(btService: Bluetooth){
-    var username by rememberSaveable {
-        mutableStateOf("")
-    }
-    var password by rememberSaveable {
-        mutableStateOf("")
-    }
-
+fun LoginScreen(btService: Bluetooth, intentForResult: ActivityResultLauncher<Intent>){
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -84,7 +90,7 @@ fun LoginScreen(btService: Bluetooth){
         )
         Button(
             onClick = {
-                  btService.checkAndEnableBluetooth()
+                  btService.checkAndEnableBluetooth(intentForResult)
             },
             colors = ButtonDefaults.buttonColors(
                 Color(0xFF495E57),
@@ -116,5 +122,5 @@ fun LoginScreen(btService: Bluetooth){
 @Preview(showBackground = true)
 @Composable
 fun LoginScreenPreview(){
-    LoginScreen(btService = Bluetooth())
+//    LoginScreen(btService = Bluetooth())
 }
